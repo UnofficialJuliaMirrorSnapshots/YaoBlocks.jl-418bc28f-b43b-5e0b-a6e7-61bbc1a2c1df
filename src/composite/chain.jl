@@ -14,7 +14,6 @@ struct ChainBlock{N, T, MT <: AbstractBlock{N, T}} <: CompositeBlock{N, T}
 end
 
 ChainBlock(blocks::AbstractBlock{N, T}...) where {N, T} = ChainBlock(collect(AbstractBlock{N, T}, blocks))
-ChainBlock(c::ChainBlock{N, T, MT}) where {N, T, MT} = copy(c)
 
 """
     chain(blocks...)
@@ -31,6 +30,10 @@ chain(list::Vector) = ChainBlock(list)
 # if not all matrix block, try to put the number of qubits.
 chain(n::Int, blocks...) = chain(map(x->parse_block(n, x), blocks)...)
 chain(n::Int, itr) = chain(map(x->parse_block(n, x), itr)...)
+function chain(n::Int, block::AbstractBlock)
+    @assert n == nqubits(block) "number of qubits mismatch"
+    return ChainBlock(block)
+end
 chain(blocks::Function...) = @λ(n->chain(n, blocks...))
 chain(it) = chain(it...) # forward iterator to vargs, so we could dispatch based on types
 chain(blocks...) = @λ(n->chain(n, blocks))
@@ -71,7 +74,7 @@ function Base.:(==)(lhs::ChainBlock{N, T}, rhs::ChainBlock{N, T}) where {N, T}
     (length(lhs.blocks) == length(rhs.blocks)) && all(lhs.blocks .== rhs.blocks)
 end
 
-Base.copy(c::ChainBlock) = ChainBlock{N, T, MT}(copy(c.blocks))
+Base.copy(c::ChainBlock{N, T, MT}) where {N, T, MT} = ChainBlock{N, T, MT}(copy(c.blocks))
 Base.similar(c::ChainBlock{N, T, MT}) where {N, T, MT} = ChainBlock{N, T}(empty!(similar(c.blocks)))
 Base.getindex(c::ChainBlock, index) = getindex(c.blocks, index)
 Base.getindex(c::ChainBlock, index::Union{UnitRange, Vector}) = ChainBlock(getindex(c.blocks, index))
