@@ -18,7 +18,8 @@ abstract type AbstractBlock{N, T} end
 Apply a block (of quantum circuit) to a quantum register.
 """
 @interface function apply!(r::AbstractRegister, b::AbstractBlock)
-    r.state = mat(b) * r.state
+    _check_size(r, b)
+    r.state .= mat(b) * r.state
     return r
 end
 
@@ -129,7 +130,8 @@ Set the parameters of `block`.
 """
 @interface setiparams!(x::AbstractBlock, args...) = x
 
-setiparams!(x::AbstractBlock, it) = setiparams!(x, it...)
+setiparams!(x::AbstractBlock, it::Union{Tuple, AbstractArray, Base.Generator}) = setiparams!(x, it...)
+setiparams!(x::AbstractBlock, a::Number, xs::Number...) = error("setparams!(x, θ...) is not implemented")
 setiparams!(x::AbstractBlock, it::Symbol) = setiparams!(x, render_params(x, it))
 
 """
@@ -137,7 +139,8 @@ setiparams!(x::AbstractBlock, it::Symbol) = setiparams!(x, render_params(x, it))
 
 Set parameters of `block` to the value in `collection` mapped by `f`.
 """
-setiparams!(f::Function, x::AbstractBlock, it) = setiparams!(x, map(f, it))
+setiparams!(f::Function, x::AbstractBlock, it) = setiparams!(x, map(x->f(x...), zip(getiparams(x), it)))
+setiparams!(f::Nothing, x::AbstractBlock, it) = setiparams!(x, it)
 
 """
     setiparams(f, block, symbol)
@@ -151,7 +154,7 @@ setiparams!(f::Function, x::AbstractBlock, it::Symbol) = setiparams!(f, x, rende
 
 Returns all the parameters contained in block tree with given root `block`.
 """
-@interface parameters(x::AbstractBlock) = parameters!(allparams_eltype(x)[], x)
+@interface parameters(x::AbstractBlock) = parameters!(parameters_eltype(x)[], x)
 
 """
     parameters!(out, block)
@@ -177,49 +180,78 @@ Return number of parameters in `block`. See also [`nparameters`](@ref).
 end
 
 """
-    params_eltype(block)
+    iparams_eltype(block)
 
 Return the element type of [`getiparams`](@ref).
 """
-@interface params_eltype(x::AbstractBlock) = eltype(getiparams(x))
+@interface iparams_eltype(x::AbstractBlock) = eltype(getiparams(x))
 
 """
-    allparams_eltype(x)
+    parameters_eltype(x)
 
 Return the element type of [`parameters`](@ref).
 """
-@interface function allparams_eltype(x::AbstractBlock)
-    T = params_eltype(x)
+@interface function parameters_eltype(x::AbstractBlock)
+    T = iparams_eltype(x)
     for each in subblocks(x)
-        T = promote_type(T, params_eltype(each))
+        T = promote_type(T, parameters_eltype(each))
     end
     return T
+end
+
+mutable struct Dispatcher{VT}
+    params::VT
+    loc::Int
+end
+
+Dispatcher(params) = Dispatcher(params, 0)
+
+function consume!(d::Dispatcher, n::Int)
+    d.loc += n
+    d.params[d.loc-n+1:d.loc]
+end
+
+function consume!(d::Dispatcher{<:Symbol}, n::Int)
+    d.loc += n
+    d.params
+end
+
+function consume!(d::Dispatcher{<:Number}, n::Int)    
+    if n == 0
+        return ()
+    elseif n == 1
+        d.loc += n
+        return d.params
+    else
+        error("do not have enough parameters to consume, expect 0, 1, got $n")
+    end
+end
+
+@interface function dispatch!(f::Union{Function, Nothing}, x::AbstractBlock, it::Dispatcher)
+    setiparams!(f, x, consume!(it, niparams(x)))
+    for each in subblocks(x)
+        dispatch!(f, each, it)
+    end
+    return x
 end
 
 """
     dispatch!(x::AbstractBlock, collection)
 
 Dispatch parameters in collection to block tree `x`.
+
+!!! note
+
+    it will try to dispatch the parameters in collection first.
 """
-@interface function dispatch!(f::Function, x::AbstractBlock, it)
-    @assert length(it) == nparameters(x) "expect $(nparameters(x)) parameters, got $(length(it))"
-    setiparams!(f, x, Iterators.take(it, nparameters(x)))
-    it = Iterators.drop(it, nparameters(x))
-    for each in subblocks(x)
-        dispatch!(f, each, it)
-    end
-    return x
+@interface function dispatch!(f::Union{Function, Nothing}, x::AbstractBlock, it)
+    dp = Dispatcher(it)
+    res = dispatch!(f, x, dp)
+    @assert (it isa Symbol || length(it) == dp.loc) "expect $(nparameters(x)) parameters, got $(length(it))"
+    return res
 end
 
-function dispatch!(f::Function, x::AbstractBlock, it::Symbol)
-    setiparams!(f, x, it)
-    for each in subblocks(x)
-        dispatch!(f, each, it)
-    end
-    return x
-end
-
-dispatch!(x::AbstractBlock, it) = dispatch!(identity, x, it)
+dispatch!(x::AbstractBlock, it) = dispatch!(nothing, x, it)
 
 """
     popdispatch!(f, block, list)
@@ -228,9 +260,9 @@ Pop the first [`nparameters`](@ref) parameters of list, map them with a function
 `f`, then dispatch them to the block tree `block`. See also [`dispatch!`](@ref).
 """
 @interface function popdispatch!(f::Function, x::AbstractBlock, list::Vector)
-    setiparams!(x, ntuple(()->f(popfirst!(list)), nparameters(x)))
+    setiparams!(f, x, (popfirst!(list) for k in 1:niparams(x))...)
     for each in subblocks(x)
-        popdispatch!(x, list)
+        popdispatch!(f, each, list)
     end
     return x
 end
@@ -241,12 +273,18 @@ end
 Pop the first [`nparameters`](@ref) parameters of list, then dispatch them to
 the block tree `block`. See also [`dispatch!`](@ref).
 """
-@interface popdispatch!(x::AbstractBlock, list::Vector) = popdispatch!(identity, x, list)
+@interface function popdispatch!(x::AbstractBlock, list::Vector)
+    setiparams!(x, (popfirst!(list) for k in 1:niparams(x))...)
+    for each in subblocks(x)
+        popdispatch!(each, list)
+    end
+    return x
+end
 
 render_params(r::AbstractBlock, params) = params
 render_params(r::AbstractBlock, params::Symbol) = render_params(r, Val(params))
 render_params(r::AbstractBlock, ::Val{:random}) = (rand() for i=1:niparams(r))
-render_params(r::AbstractBlock, ::Val{:zero}) = (zero(params_eltype(r)) for i in 1:niparams(r))
+render_params(r::AbstractBlock, ::Val{:zero}) = (zero(iparams_eltype(r)) for i in 1:niparams(r))
 
 """
     HasParameters{X} <: SimpleTraits.Trait
@@ -275,3 +313,7 @@ Returns the key that identify the matrix cache of this block. By default, we
 use the returns of [`parameters`](@ref) as its key.
 """
 @interface cache_key(x::AbstractBlock)
+
+function _check_size(r::ArrayReg, pb::AbstractBlock{N}) where N
+    N == nactive(r) || throw(QubitMismatchError("register size $(nactive(r)) mismatch with block size $N"))
+end

@@ -57,7 +57,7 @@ Base.show(io::IO, ::MIME"plain/text", blk::AbstractBlock) = print_tree(io, blk)
 
 
 function Base.show(io::IO, ::MIME"plain/text",
-        blk::TagBlock{N, T, <:PrimitiveBlock}) where {N, T}
+        blk::TagBlock{<:PrimitiveBlock})
     return print_tree(io, blk; title=false, compact=false)
 end
 
@@ -285,5 +285,6 @@ function print_annotation(
     k::Int)
 
     printstyled(io, node.locs; bold=true, color=:white)
+    print(io, " ")
     print_annotation(io, child)
 end

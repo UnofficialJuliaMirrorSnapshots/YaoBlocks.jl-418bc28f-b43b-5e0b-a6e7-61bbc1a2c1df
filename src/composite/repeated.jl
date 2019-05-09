@@ -6,13 +6,13 @@ export RepeatedBlock, repeat
 
 Repeat the same block on given locations.
 """
-struct RepeatedBlock{N, C, GT <: AbstractBlock, T} <: AbstractContainer{N, T, GT}
+struct RepeatedBlock{N, C, GT <: AbstractBlock, T} <: AbstractContainer{GT, N, T}
     content::GT
     locs::NTuple{C, Int}
 end
 
 function RepeatedBlock{N}(block::AbstractBlock{M, T}, locs::NTuple{C, Int}) where {N, M, T, C}
-    @assert_locs N Tuple(i:i+M-1 for i in locs)
+    @assert_locs_safe N Tuple(i:i+M-1 for i in locs)
     return RepeatedBlock{N, C, typeof(block), T}(block, locs)
 end
 
@@ -25,6 +25,47 @@ end
 
 Create a [`RepeatedBlock`](@ref) with total number of qubits `n` and the block
 to repeat on given location or on all the locations.
+
+# Example
+
+This will create a repeat block which puts 4 X gates on each location.
+
+```jldoctest
+julia> repeat(4, X)
+nqubits: 4, datatype: Complex{Float64}
+repeat on (1, 2, 3, 4)
+└─ X gate
+```
+
+You can also specify the location
+
+```jldoctest
+julia> repeat(4, X, (1, 2))
+nqubits: 4, datatype: Complex{Float64}
+repeat on (1, 2)
+└─ X gate
+```
+
+But repeat won't copy the gate, thus, if it is a gate with parameter, e.g a `phase(0.1)`, the parameter
+will change simultaneously.
+
+```jldoctest
+julia> g = repeat(4, phase(0.1))
+nqubits: 4, datatype: Complex{Float64}
+repeat on (1, 2, 3, 4)
+└─ phase(0.1)
+
+julia> g.content
+phase(0.1)
+
+julia> g.content.theta = 0.2
+0.2
+
+julia> g
+nqubits: 4, datatype: Complex{Float64}
+repeat on (1, 2, 3, 4)
+└─ phase(0.2)
+```
 """
 Base.repeat(n::Int, x::AbstractBlock, locs::Int...) =
     repeat(n, x, locs)
@@ -32,6 +73,7 @@ Base.repeat(n::Int, x::AbstractBlock, locs::NTuple{C, Int}) where C =
     RepeatedBlock{n}(x, locs)
 Base.repeat(n::Int, x::AbstractBlock, locs) = repeat(n, x, locs...)
 Base.repeat(n::Int, x::AbstractBlock) = RepeatedBlock{n}(x)
+Base.repeat(x::AbstractBlock) = @λ(n->repeat(n, x))
 
 """
     repeat(x::AbstractBlock, locs)
@@ -48,9 +90,10 @@ mat(rb::RepeatedBlock{N}) where N = hilbertkron(N, fill(mat(rb.content), length(
 mat(rb::RepeatedBlock{N, 0, GT, T}) where {N, GT, T} = IMatrix{1<<N, T}()
 
 function apply!(r::AbstractRegister, rp::RepeatedBlock)
+    _check_size(r, rp)
     m  = mat(rp.content)
     for addr in rp.locs
-        instruct!(matvec(r.state), mat(rp.content), Tuple(addr:addr+nqubits(rp.content)-1))
+        instruct!(matvec(r.state), m, Tuple(addr:addr+nqubits(rp.content)-1))
     end
     return r
 end

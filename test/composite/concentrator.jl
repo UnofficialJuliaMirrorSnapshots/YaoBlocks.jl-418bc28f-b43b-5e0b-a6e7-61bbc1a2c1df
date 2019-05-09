@@ -12,6 +12,7 @@ blk = kron(4, 2=>Rx(0.3))
 @test chsubblocks(c, [blk]) |> subblocks |> first == blk
 
 @test apply!(copy(reg), c) == apply!(copy(reg), kron(10, 3=>X))
+@test apply!(rand_state(12, nbatch=10) |> focus!(Tuple(1:10)...), c) |> nactive == 10
 
 @testset "test repeat" begin
     c = concentrate(8, repeat(5, H), 1:5)
@@ -19,4 +20,9 @@ blk = kron(4, 2=>Rx(0.3))
     r1 = copy(r) |> c
     r2 = copy(r) |> repeat(8, H, 1:5)
     @test r1 ≈ r2
+end
+
+@testset "mat" begin
+    cc = concentrate(5, kron(X,X), (1,3))
+    @test applymatrix(cc) ≈ mat(cc)
 end

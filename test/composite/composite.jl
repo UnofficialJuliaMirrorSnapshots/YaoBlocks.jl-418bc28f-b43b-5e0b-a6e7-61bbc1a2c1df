@@ -28,10 +28,19 @@ end
     include("concentrator.jl")
 end
 
-@testset "test cache" begin
-    include("cache.jl")
+@testset "test tag" begin
+    include("tag.jl")
+    include("cache.jl")    
 end
 
 @testset "test pauli string" begin
     include("pauli_string.jl")
+end
+
+@testset "test single block chsubblocks" begin
+    @test chsubblocks(chain(X), Y) == chain(Y)
+    @test chsubblocks(kron(X), Y) == kron(Y)
+    @test chsubblocks(roll(X), Y) == roll(Y)
+    @test chsubblocks(prod(X), Y) == prod(Y)
+    @test chsubblocks(sum(X), Y) == sum(Y)
 end

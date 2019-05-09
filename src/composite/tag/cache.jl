@@ -38,14 +38,14 @@ CacheServers.pull(frag::CacheFragment) = frag.storage[cache_key(frag.ref)]
 CacheServers.clear!(frag::CacheFragment) = (empty!(frag.storage); frag)
 
 """
-    CachedBlock{ST, BT, N, T} <: AbstractContainer{N, T, BT}
+    CachedBlock{ST, BT, N, T} <: TagBlock{BT, N, T}
 
 A label type that tags an instance of type `BT`. It forwards
 every methods of the block it contains, except [`mat`](@ref)
 and [`apply!`](@ref), it will cache the matrix form whenever
 the program has.
 """
-struct CachedBlock{ST, BT, N, T} <: TagBlock{N, T, BT}
+struct CachedBlock{ST, BT, N, T} <: TagBlock{BT, N, T}
     server::ST
     content::BT
     level::Int
@@ -59,12 +59,12 @@ end
 CacheServers.iscached(c::CachedBlock) = iscached(c.server, c.content)
 iscacheable(c::CachedBlock) = iscacheable(c.server, c.content)
 chsubblocks(cb::CachedBlock, blk::AbstractBlock) = CachedBlock(cb.server, blk, cb.level)
-occupied_locs(x::CachedBlock) = occupied_locs(parent(x))
+occupied_locs(x::CachedBlock) = occupied_locs(content(x))
 PreserveStyle(::CachedBlock) = PreserveAll()
 
 function update_cache(c::CachedBlock)
     if !iscached(c.server, c.content)
-        m = dropzeros!(mat(c.content))
+        m = mat(c.content)
         push!(c.server, m, c.content)
     end
     return c
@@ -75,7 +75,7 @@ CacheServers.clear!(c::CachedBlock) = (clear!(c.server, c.content); c)
 
 function mat(c::CachedBlock)
     if !iscached(c.server, c.content)
-        m = dropzeros!(mat(c.content))
+        m = mat(c.content)
         push!(c.server, m, c.content)
         return m
     end
@@ -94,10 +94,18 @@ function apply!(r::AbstractRegister, c::CachedBlock, signal)
     end
     return r
 end
-apply!(r::AbstractRegister, c::CachedBlock) = (r.state .= mat(c) * r; r)
+
+apply!(r::AbstractRegister, c::CachedBlock) = apply!(r, c.content)
+apply!(r::ArrayReg, c::CachedBlock) = (r.state .= mat(c) * r.state; r)
 
 Base.similar(c::CachedBlock, level::Int) = CachedBlock(c.server, c.content, level)
 Base.copy(c::CachedBlock) = CachedBlock(c.server, copy(c.content), c.level)
+Base.length(x::CachedBlock) = length(content(x))
+Base.getindex(c::CachedBlock, index...) = getindex(content(c), index...)
+Base.setindex!(c::CachedBlock, val, index...) = setindex!(content(c), val, index...)
+Base.iterate(c::CachedBlock) = iterate(content(c))
+Base.iterate(c::CachedBlock, st) = iterate(content(c), st)
+Base.eltype(x::CachedBlock) = eltype(content(x))
 
 
 const DefaultCacheServer = get_server(AbstractBlock, CacheFragment)
