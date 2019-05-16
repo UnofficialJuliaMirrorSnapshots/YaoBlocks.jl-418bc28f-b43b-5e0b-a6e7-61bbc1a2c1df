@@ -1,19 +1,47 @@
 export Daggered
 
 """
-    Daggered{N, T, BT} <: TagBlock{N, T}
+    Daggered{N, BT} <: TagBlock{N}
 
 Wrapper block allowing to execute the inverse of a block of quantum circuit.
 """
-struct Daggered{BT <: AbstractBlock, N, T} <: TagBlock{BT, N, T}
+struct Daggered{BT <: AbstractBlock, N} <: TagBlock{BT, N}
     content::BT
 end
 
-Daggered(x::BT) where {N, T, BT<:AbstractBlock{N, T}} =
-    Daggered{BT, N, T}(x)
+"""
+    Daggered(x)
+
+Create a [`Daggered`](@ref) block with given block `x`.
+
+# Example
+
+The inverse QFT is not hermitian, thus it will be tagged with a `Daggered` block.
+
+```jldoctest
+julia> A(i, j) = control(i, j=>shift(2π/(1<<(i-j+1))));
+
+julia> B(n, i) = chain(n, i==j ? put(i=>H) : A(j, i) for j in i:n);
+
+julia> qft(n) = chain(B(n, i) for i in 1:n);
+
+julia> struct QFT{N} <: PrimitiveBlock{N} end
+
+julia> QFT(n) = QFT{n}();
+
+julia> circuit(::QFT{N}) where N = qft(N);
+
+julia> YaoBlocks.mat(x::QFT) = mat(circuit(x));
+
+julia> QFT(2)'
+ [†]QFT{2}
+```
+"""
+Daggered(x::BT) where {N, BT<:AbstractBlock{N}} =
+    Daggered{BT, N}(x)
 
 PreserveStyle(::Daggered) = PreserveAll()
-mat(blk::Daggered) = adjoint(mat(content(blk)))
+mat(::Type{T}, blk::Daggered) where T = adjoint(mat(T, content(blk)))
 
 Base.adjoint(x::AbstractBlock) = ishermitian(x) ? x : Daggered(x)
 Base.adjoint(x::Daggered) = content(x)

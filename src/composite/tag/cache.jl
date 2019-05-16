@@ -38,21 +38,21 @@ CacheServers.pull(frag::CacheFragment) = frag.storage[cache_key(frag.ref)]
 CacheServers.clear!(frag::CacheFragment) = (empty!(frag.storage); frag)
 
 """
-    CachedBlock{ST, BT, N, T} <: TagBlock{BT, N, T}
+    CachedBlock{ST, BT, N} <: TagBlock{BT, N}
 
 A label type that tags an instance of type `BT`. It forwards
 every methods of the block it contains, except [`mat`](@ref)
 and [`apply!`](@ref), it will cache the matrix form whenever
 the program has.
 """
-struct CachedBlock{ST, BT, N, T} <: TagBlock{BT, N, T}
+struct CachedBlock{ST, BT, N} <: TagBlock{BT, N}
     server::ST
     content::BT
     level::Int
 
-    function CachedBlock(server::ST, x::BT, level::Int) where {ST, N, T, BT <: AbstractBlock{N, T}}
+    function CachedBlock(server::ST, x::BT, level::Int) where {ST, N, BT <: AbstractBlock{N}}
         alloc!(server, x, CacheFragment(x))
-        new{ST, BT, N, T}(server, x, level)
+        new{ST, BT, N}(server, x, level)
     end
 end
 
@@ -86,9 +86,9 @@ function CacheServers.pull(c::CachedBlock)
     return pull(c.server, c.content)
 end
 
-function apply!(r::AbstractRegister, c::CachedBlock, signal)
+function apply!(r::ArrayReg{B, T}, c::CachedBlock, signal) where {B, T}
     if signal > c.level
-        r.state .= mat(c) * r
+        r.state .= mat(T, c) * r
     else
         apply!(r, c.content)
     end
@@ -112,6 +112,31 @@ const DefaultCacheServer = get_server(AbstractBlock, CacheFragment)
 
 cache(x::Function, level::Int=1; recursive=false) = n->cache(x(n), level; recursive=recursive)
 
+"""
+    cache(x[, level=1; recursive=false])
+
+Create a [`CachedBlock`](@ref) with given block `x`, which will cache the matrix of `x` for the first time
+it calls [`mat`](@ref), and use the cached matrix in the following calculations.
+
+# Example
+
+```jldoctest
+julia> cache(control(3, 1, 2=>X))
+nqubits: 3
+[cached] control(1)
+   └─ (2,) X gate
+
+
+julia> chain(cache(control(3, 1, 2=>X)), repeat(H))
+nqubits: 3
+chain
+├─ [cached] control(1)
+│     └─ (2,) X gate
+└─ repeat on (1, 2, 3)
+   └─ H gate
+
+```
+"""
 function cache(x::AbstractBlock, level::Int=1; recursive=false)
     return cache(DefaultCacheServer, x, level, recursive=recursive)
 end
@@ -156,14 +181,4 @@ function cache(server::AbstractCacheServer, block::KronBlock, level::Int; recurs
     end
 
     return CachedBlock(server, x, level)
-end
-
-function cache(server::AbstractCacheServer, block::Roller, level::Int; recursive::Bool=false)
-    if recursive
-        roller = Roller{T}(ntuple(x->cache(server, block[x], level, recursive=recursive), Val(M))...)
-    else
-        roller = block
-    end
-
-    return CachedBlock(server, roller, level)
 end

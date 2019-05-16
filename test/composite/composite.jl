@@ -1,4 +1,4 @@
-using Test, YaoBlocks
+using Test, YaoBase, YaoBlocks, YaoArrayRegister
 
 @testset "test chain" begin
     include("chain.jl")
@@ -20,10 +20,6 @@ end
     include("repeated.jl")
 end
 
-@testset "test roll" begin
-    include("roller.jl")
-end
-
 @testset "test concentrate" begin
     include("concentrator.jl")
 end
@@ -40,7 +36,11 @@ end
 @testset "test single block chsubblocks" begin
     @test chsubblocks(chain(X), Y) == chain(Y)
     @test chsubblocks(kron(X), Y) == kron(Y)
-    @test chsubblocks(roll(X), Y) == roll(Y)
     @test chsubblocks(prod(X), Y) == prod(Y)
     @test chsubblocks(sum(X), Y) == sum(Y)
 end
+
+# check extension fallback errors
+struct MockedQFT{N} <: CompositeBlock{N} end
+@test_throws NotImplementedError ishermitian(MockedQFT{2}())
+@test_throws NotImplementedError isunitary(MockedQFT{2}())

@@ -2,13 +2,12 @@ using Test, YaoBlocks, YaoArrayRegister
 
 @testset "test constructor" for T in [Float16, Float32, Float64]
     # NOTE: type should follow the axis
-    @test RotationGate(X(Complex{T}), 0.1) isa PrimitiveBlock{1, Complex{T}}
-    @test RotationGate(X(Complex{T}), 0.1) isa RotationGate{1, T, XGate{Complex{T}}}
-    @test_throws TypeError RotationGate{1, T, XGate{Complex{T}}} # will not accept non-real type
+    @test RotationGate(X, 0.1) isa PrimitiveBlock{1}
+    @test_throws TypeError RotationGate{1, Complex{T}, XGate} # will not accept non-real type
 
-    @test Rx(T(0.1)) isa RotationGate{1, T, XGate{Complex{T}}}
-    @test Ry(T(0.1)) isa RotationGate{1, T, YGate{Complex{T}}}
-    @test Rz(T(0.1)) isa RotationGate{1, T, ZGate{Complex{T}}}
+    @test Rx(T(0.1)) isa RotationGate{1, T, XGate}
+    @test Ry(T(0.1)) isa RotationGate{1, T, YGate}
+    @test Rz(T(0.1)) isa RotationGate{1, T, ZGate}
 end
 
 @testset "test matrix" begin
@@ -24,12 +23,27 @@ end
     end
 end
 
+@testset "test apply" begin
+    r = rand_state(1)
+    @test state(apply!(copy(r), Rx(0.1))) ≈ mat(Rx(0.1)) * state(r)
+end
+
 @testset "test dispatch" begin
     @test dispatch!(Rx(0.1), 0.3) == Rx(0.3)
+    @test nparameters(Rx(0.1)) == 1
 
     @testset "test $op" for op in [+, -, *, /]
         @test dispatch!(op, Rx(0.1), π) == Rx(op(0.1, π))
     end
 
     @test_throws AssertionError dispatch!(Rx(0.1), (0.2, 0.3))
+end
+
+@testset "adjoints" begin
+    @test Rx(0.1)' == Rx(-0.1)
+    @test Rx(0.2)' == Rx(-0.2)
+    @test copy(Rx(0.1)) == Rx(0.1)
+    
+    g = Rx(0.1) # creates a new one
+    @test copy(g) !== g
 end
