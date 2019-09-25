@@ -1,5 +1,15 @@
 using YaoBase: @interface
 
+"""
+    parse_block(n, ex)
+
+This function parse the julia object `ex` to a quantum block,
+it defines the syntax of high level interfaces. `ex` can be
+a function takes number of qubits `n` as input or it can be
+a pair.
+"""
+function parse_block end
+
 parse_block(n::Int, x::Function) = x(n)
 
 function parse_block(n::Int, x::AbstractBlock{N}) where N
@@ -77,6 +87,10 @@ end
 
 function expect(op::Scale, reg::AbstractRegister)
     factor(op)*expect(content(op), reg)
+end
+
+function expect(op, plan::Pair{<:AbstractRegister, <:AbstractBlock})
+    expect(op, plan.first |> plan.second)
 end
 
 expect(op::Add, reg::AbstractRegister{1}) = invoke(expect, Tuple{Add, AbstractRegister}, op, reg)

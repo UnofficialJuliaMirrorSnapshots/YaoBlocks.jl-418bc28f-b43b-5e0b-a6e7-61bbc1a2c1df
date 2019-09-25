@@ -15,6 +15,10 @@ include("composite/composite.jl")
 include("algebra.jl")
 include("blocktools.jl")
 include("layout.jl")
+include("treeutils/treeutils.jl")
+
+include("autodiff/autodiff.jl")
+export AD
 
 include("deprecations.jl")
 
